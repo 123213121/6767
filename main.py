@@ -9,23 +9,6 @@ import zipfile
 import asyncio
 import os
 from aiohttp import web
-
-# Простая функция для ответа Render
-async def handle(request):
-    return web.Response(text="Bot is running!")
-
-async def start_web_server():
-    app = web.Application()
-    app.router.add_get("/", handle)
-    runner = web.AppRunner(app)
-    await runner.setup()
-    port = int(os.environ.get("PORT", 8080))
-    site = web.TCPSite(runner, "0.0.0.0", port)
-    await site.start()
-
-# И в своей главной async-функции (main) перед dp.start_polling(bot) добавь:
-# await start_web_server()
-
 asyncio.set_event_loop(asyncio.new_event_loop())
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.filters import Command, CommandStart
@@ -972,13 +955,43 @@ async def admin_broadcast_execute(message: Message, state: FSMContext):
             fail += 1
 
     await message.answer(f"📊 Рассылка завершена!\nУспешно: {success}\nОшибок: {fail}")
+async def handle(request):
+    return web.Response(text="Bot is running!")
+
+async def start_web_server():
+    app = web.Application()
+    app.router.add_get("/", handle)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    port = int(os.environ.get("PORT", 8080))
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
 
 
 async def main():
     dp.include_router(router)
     await bot.delete_webhook(drop_pending_updates=True)
+    
+    # 1. Запускаем веб-сервер для Render
+    await start_web_server()
+    
     print("Бот запущен с обновленным форматом уведомления о коде!")
+    
+    # 2. Запускаем бота
     await dp.start_polling(bot)
+
+
+if __name__ == "__main__":
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            asyncio.create_task(main())
+        else:
+            loop.run_until_complete(main())
+    except RuntimeError:
+        asyncio.run(main())
+
+
 
 
 if __name__ == "__main__":
