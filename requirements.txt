@@ -2,3 +2,5 @@ aiogram
 pyrogram
 tgcrypto
 requests
+aiohttp
+
