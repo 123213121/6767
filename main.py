@@ -967,32 +967,28 @@ async def start_web_server():
     site = web.TCPSite(runner, "0.0.0.0", port)
     await site.start()
 
+async def handle(request):
+    return web.Response(text="Bot is running!")
+
+async def start_web_server():
+    app = web.Application()
+    app.router.add_get("/", handle)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    port = int(os.environ.get("PORT", 8080))
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
 
 async def main():
-    dp.include_router(router)
-    await bot.delete_webhook(drop_pending_updates=True)
-    
-    # 1. Запускаем веб-сервер для Render
+    # Запуск веб-сервера для Render
     await start_web_server()
     
-    print("Бот запущен с обновленным форматом уведомления о коде!")
-    
-    # 2. Запускаем бота
+    dp.include_router(router)
+    await bot.delete_webhook(drop_pending_updates=True)
+    print("Юзербот успешно запущен!")
     await dp.start_polling(bot)
 
 
-if __name__ == "__main__":
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            asyncio.create_task(main())
-        else:
-            loop.run_until_complete(main())
-    except RuntimeError:
-        asyncio.run(main())
-
-
-
 
 if __name__ == "__main__":
     try:
@@ -1003,3 +999,153 @@ if __name__ == "__main__":
             loop.run_until_complete(main())
     except RuntimeError:
         asyncio.run(main())
+
+
+
+
+if __name__ == "__main__":
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            asyncio.create_task(main())
+        else:
+            loop.run_until_complete(main())
+    except RuntimeError:
+        asyncio.run(main())
+# ================= АНИМАЦИИ И ПРИКОЛЫ =================
+@app.on_message(filters.command("type", prefixes="+") & filters.me)
+async def cmd_type(client, message):
+    text = message.text.split(maxsplit=1)[1] if len(message.text.split()) > 1 else "..."
+    output = ""
+    for char in text:
+        output += char
+        try:
+            await message.edit(output + "▒")
+            await asyncio.sleep(0.08)
+        except Exception:
+            break
+    try:
+        await message.edit(output)
+    except Exception:
+        pass
+
+@app.on_message(filters.command("hack", prefixes="+") & filters.me)
+async def cmd_hack(client, message):
+    steps = [
+        "💻 Инициализация взлома системы...",
+        "█▒▒▒▒▒▒▒▒▒ 10%",
+        "████▒▒▒▒▒▒ 40%",
+        "███████▒▒▒ 70%",
+        "██████████ 100%",
+        "⚠️ Доступ успешно получен! Скачивание данных..."
+    ]
+    for step in steps:
+        await message.edit(step)
+        await asyncio.sleep(0.6)
+
+@app.on_message(filters.command("love", prefixes="+") & filters.me)
+async def cmd_love(client, message):
+    hearts = ["❤️", "💖", "💗", "💓", "💞", "💘"]
+    text = "❤️ Любовь захватывает мир ❤️\n"
+    for h in hearts:
+        text += h * 3 + "\n"
+        await message.edit(text)
+        await asyncio.sleep(0.4)
+
+@app.on_message(filters.command("matrix", prefixes="+") & filters.me)
+async def cmd_matrix(client, message):
+    matrix_lines = [
+        "1010101001",
+        "0101110010 🟢",
+        "1110001110 CODE",
+        "0001110001 MATRIX",
+        "wake up, Neo..."
+    ]
+    for line in matrix_lines:
+        await message.edit(line)
+        await asyncio.sleep(0.5)
+
+@app.on_message(filters.command(["dice", "slot", "darts", "basket", "football", "bowling"], prefixes="+") & filters.me)
+async def cmd_games(client, message):
+    cmd = message.command[0]
+    emoji_map = {
+        "dice": "🎲", "slot": "🎰", "darts": "🎯",
+        "basket": "🏀", "football": "⚽", "bowling": "🎳"
+    }
+    await message.delete()
+    await client.send_dice(message.chat.id, emoji=emoji_map.get(cmd, "🎲"))
+
+# ================= РП-ДЕЙСТВИЯ =================
+RP_ACTIONS = {
+    "погладить": "погладил(а) с теплом ✨",
+    "обнять": "крепко обнял(а) 🤗",
+    "поцеловать": "нежно поцеловал(а) 💋",
+    "прижать": "прижал(а) к себе 🫂",
+    "покормить": "покормил(а) вкусняшкой 🍰",
+    "улыбнуться": "тепло улыбнулся(ась) 😊",
+    "танец": "начал(а) зажигательный танец 🕺",
+    "укусить": "игриво укусил(а) 🦷",
+    "ударить": "резко ударил(а) 💢",
+    "пнуть": "аккуратно пнул(а) 👟",
+    "помахать": "помахал(а) рукой 👋",
+    "заплакать": "горько заплакал(а) 😢"
+}
+
+@app.on_message(filters.command(list(RP_ACTIONS.keys()), prefixes="+") & filters.me)
+async def rp_handler(client, message):
+    action = message.command[0]
+    target = message.reply_to_message.from_user.mention if message.reply_to_message and message.reply_to_message.from_user else "воздух"
+    text = f"*{message.from_user.mention} {RP_ACTIONS[action]} {target}*"
+    await message.edit(text)
+
+# ================= PASTURE LOGS (Перехват удалений) =================
+LOGS_ENABLED = True
+
+@app.on_deleted_messages()
+async def logs_deleted(client, messages):
+    if not LOGS_ENABLED:
+        return
+    for msg in messages:
+        logging.info(f"[PASTURE LOGS] Удалено сообщение в чате {msg.chat.id}: {msg.text}")
+
+@app.on_edited_message()
+async def logs_edited(client, message):
+    if not LOGS_ENABLED or not message.from_user or message.from_user.is_self:
+        return
+    logging.info(f"[PASTURE LOGS] Отредактировано сообщение от {message.from_user.id}: {message.text}")
+RP_ACTIONS = {
+    "погладить": "погладил(а) с теплом ✨",
+    "обнять": "крепко обнял(а) 🤗",
+    "поцеловать": "нежно поцеловал(а) 💋",
+    "прижать": "прижал(а) к себе 🫂",
+    "покормить": "покормил(а) вкусняшкой 🍰",
+    "улыбнуться": "тепло улыбнулся(ась) 😊",
+    "танец": "начал(а) зажигательный танец 🕺",
+    "укусить": "игриво укусил(а) 🦷",
+    "ударить": "резко ударил(а) 💢",
+    "пнуть": "аккуратно пнул(а) 👟",
+    "помахать": "помахал(а) рукой 👋",
+    "заплакать": "горько заплакал(а) 😢"
+}
+
+@app.on_message(filters.command(list(RP_ACTIONS.keys()), prefixes="+") & filters.me)
+async def rp_handler(client, message):
+    action = message.command[0]
+    target = message.reply_to_message.from_user.mention if message.reply_to_message and message.reply_to_message.from_user else "воздух"
+    text = f"*{message.from_user.mention} {RP_ACTIONS[action]} {target}*"
+    await message.edit(text)
+LOGS_ENABLED = True
+
+@app.on_deleted_messages()
+async def logs_deleted(client, messages):
+    if not LOGS_ENABLED:
+        return
+    for msg in messages:
+        logging.info(f"[PASTURE LOGS] Удалено сообщение в чате {msg.chat.id}: {msg.text}")
+
+@app.on_edited_message()
+async def logs_edited(client, message):
+    if not LOGS_ENABLED or not message.from_user or message.from_user.is_self:
+        return
+    logging.info(f"[PASTURE LOGS] Отредактировано сообщение от {message.from_user.id}: {message.text}")
+
