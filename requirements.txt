@@ -1,2 +1,4 @@
 aiogram
 requests
+pyrogram
+tgcrypto
