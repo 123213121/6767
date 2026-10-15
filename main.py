@@ -6,6 +6,8 @@ import os
 import json
 import base64
 import zipfile
+import asyncio
+asyncio.set_event_loop(asyncio.new_event_loop())
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
