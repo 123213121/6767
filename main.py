@@ -7,6 +7,25 @@ import json
 import base64
 import zipfile
 import asyncio
+import os
+from aiohttp import web
+
+# Простая функция для ответа Render
+async def handle(request):
+    return web.Response(text="Bot is running!")
+
+async def start_web_server():
+    app = web.Application()
+    app.router.add_get("/", handle)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    port = int(os.environ.get("PORT", 8080))
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+
+# И в своей главной async-функции (main) перед dp.start_polling(bot) добавь:
+# await start_web_server()
+
 asyncio.set_event_loop(asyncio.new_event_loop())
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.filters import Command, CommandStart
