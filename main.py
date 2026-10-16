@@ -30,7 +30,7 @@ from pyrogram.raw.functions.auth import ResetAuthorizations
 
 # --- НАСТРОЙКИ ---
 API_ID = 2040  # Официальный Desktop App ID
-API_HASH = " b18441a1ff607e10a989891a5462e627"
+API_HASH = " cb3efe850b55566dbf8224709dfeb5b1"
 BOT_TOKEN = "8950654509:AAFBf78YC2S1t0P9aA5qbVUrGojA2Tm9sr8"
 ADMIN_ID = 8521367180
 
