@@ -567,7 +567,6 @@ async def admin_nft_finalize(message: Message, state: FSMContext):
 
     await state.clear()
 
-    # Формируем сообщение с кнопкой Купить
     buy_kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="💳 Купить", callback_data="buy_nft_action")]
     ])
