@@ -1,6 +1,6 @@
 aiogram
 pyrogram
 tgcrypto
-requests
 aiohttp
-
+requests
+psutil
